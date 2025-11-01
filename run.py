@@ -99,13 +99,17 @@ class SoundboardClient(discord.Client):
         await client.disconnect()
         return None
 
+    def iter_path(self) -> List[pathlib.Path]:
+        return sorted(self._path.iterdir(), key=lambda path: path.name)
+
     async def list_(self, params: str, message: discord.Message) -> str:
-        return '\n'.join([f'{i}: {path.name}' for i, path in enumerate(self._path.iterdir(), 1)])
+        return '\n'.join([f'{i}: {path.name}' for i, path in enumerate(self.iter_path(), 1)])
+
 
     async def play(self, params: str, message: discord.Message) -> Optional[str]:
         if params.isnumeric():
             i = int(params) - 1
-            files = list(self._path.iterdir())
+            files = list(self.iter_path())
             if i >= len(files) or i < 0:
                 return 'Invalid file number'
             else:
@@ -113,7 +117,7 @@ class SoundboardClient(discord.Client):
         elif pathlib.Path(params).is_absolute():
             path = pathlib.Path(params)
         else:
-            matches = [path for path in self._path.iterdir() if path.name == params or path.name.startswith(params + '.')]
+            matches = [path for path in self.iter_path() if path.name == params or path.name.startswith(params + '.')]
             if not matches:
                 return 'No such file'
             path = matches[0]
