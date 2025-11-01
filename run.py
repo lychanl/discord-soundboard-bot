@@ -124,15 +124,16 @@ class SoundboardClient(discord.Client):
         if not path.is_file():
             return 'Not a file'
 
-        client = await self._get_guild_voice_channel(message.guild)
+        client = await self._get_guild_voice_client(message.guild)
 
         if client is None:
             return 'Not connected!'
 
+        client.stop()
         client.play(discord.FFmpegPCMAudio(str(path)))
 
     async def stop(self, params: str, message: discord.Message) -> Optional[str]:
-        client = await self._get_guild_voice_channel(message.guild)
+        client = await self._get_guild_voice_client(message.guild)
 
         if client is None:
             return 'Not connected!'
