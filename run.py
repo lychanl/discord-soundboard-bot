@@ -5,7 +5,74 @@ from traceback import print_exception
 
 import discord
 
-from typing import List, Optional
+from typing import Callable, List, Optional
+
+
+class Board(discord.ui.LayoutView):
+    MAX_PATHS = 27
+
+    def __init__(self, user: discord.User, paths: List[pathlib.Path]) -> None:
+        super().__init__(timeout=None)
+        self.user = user
+        self.paths = paths
+        self.start = 0
+
+        self._update()
+
+    def _update(self) -> None:
+        for i in range(self.start, min(len(self.paths), self.start + self.MAX_PATHS), 3):
+            self.add_item(discord.ui.ActionRow(*[BoardButton(path) for path in self.paths[i:i+3]]))
+
+        self.add_item(discord.ui.ActionRow(
+            BoardControlButton('[Prev]', self.start == 0, self._prev),
+            BoardControlButton('[Close]', False, self._disable),
+            BoardControlButton('[Next]', len(self.paths) <= self.start + self.MAX_PATHS, self._next)
+        ))
+
+    def _next(self) -> None:
+        self.clear_items()
+        self.start += self.MAX_PATHS
+        self._update()
+
+    def _prev(self) -> None:
+        self.clear_items()
+        self.start -= self.MAX_PATHS
+        self._update()
+
+    def _disable(self) -> None:
+        for child in self.walk_children():
+                child.disabled = True
+
+    async def interaction_check(self, interaction: discord.Interaction) -> None:
+        return interaction.user == self.user
+
+
+class BoardButton(discord.ui.Button):
+    def __init__(self, path: pathlib.Path) -> None:
+        super().__init__(label=path.name)
+        self.path = path
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        client: SoundboardClient = interaction.client
+        view: Board = self.view
+        out = await client._play(self.path, interaction.guild)
+        if out:
+            view._disable()
+            await interaction.message.edit(view=self.view)
+            await interaction.message.channel.send(content=out)
+        else:
+            await interaction.response.defer()
+
+
+class BoardControlButton(discord.ui.Button):
+    def __init__(self, label: str, disabled: bool, func: Callable[[], None]):
+        super().__init__(label=label, disabled=disabled)
+        self.func = func
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        self.func()
+        await interaction.message.edit(view=self.view)
+        await interaction.response.defer()
 
 
 class SoundboardClient(discord.Client):
@@ -25,7 +92,8 @@ class SoundboardClient(discord.Client):
              '\n- name of the file (with or without extension) in the directory provided in config'
              '\n- absoulte path of a file'
              '\n- number of the file in alphabetical order (as seen using list command)'),
-            ('stop', self.stop, '', 'Stops playing audio file')
+            ('stop', self.stop, '', 'Stops playing audio file'),
+            ('board', self.board, '', 'Show selectable list of files')
         ]
         self._users = users
 
@@ -33,6 +101,7 @@ class SoundboardClient(discord.Client):
         print('Connected!')
 
     async def on_message(self, message: discord.Message) -> None:
+        print('/Message:', message.interaction, message.content)
         if message.author == self.user:
             return
         if not message.content.startswith(self._prefix):
@@ -100,7 +169,9 @@ class SoundboardClient(discord.Client):
         return None
 
     def iter_path(self) -> List[pathlib.Path]:
-        return sorted(self._path.iterdir(), key=lambda path: path.name)
+        return sorted(
+            [p for p in self._path.iterdir() if p.is_file()],
+            key=lambda path: path.name)
 
     async def list_(self, params: str, message: discord.Message) -> str:
         return '\n'.join([f'{i}: {path.name}' for i, path in enumerate(self.iter_path(), 1)])
@@ -123,8 +194,10 @@ class SoundboardClient(discord.Client):
             path = matches[0]
         if not path.is_file():
             return 'Not a file'
+        return self._play(path, message.guild)
 
-        client = await self._get_guild_voice_client(message.guild)
+    async def _play(self, path: pathlib.Path, guild: discord.Guild) -> Optional[str]:
+        client = await self._get_guild_voice_client(guild)
 
         if client is None:
             return 'Not connected!'
@@ -139,6 +212,13 @@ class SoundboardClient(discord.Client):
             return 'Not connected!'
 
         client.stop()
+
+    async def board(self, params: str, message: discord.Message) -> Optional[str]:
+        if not await self._get_guild_voice_client(message.guild):
+            return 'Not connected!'
+        await message.channel.send(view=Board(message.author, self.iter_path()))
+        return None
+    
 
 
 def get_config(path: str) -> dict:

@@ -33,3 +33,4 @@ Config file has the following structure:
 - list: lists files in the audio directory (with numerical ids for easier selection)
 - play (file_id|file_name|absolute_path): plays specified file from the audio directory (or any other if absolute path used). Needs to be connected to a voice channel
 - stop: stops playing
+- board: shows a soundboard with buttons corresponding to files from the audio directory that may be pressed by the initializing user
